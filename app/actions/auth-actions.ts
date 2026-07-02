@@ -18,14 +18,33 @@ import {
 // =============================================================================
 
 async function generateMemberNumber(): Promise<string> {
-  const latest = await prisma.user.findFirst({
-    orderBy: { createdAt: "desc" },
-    select:  { memberNumber: true },
+  // Pull all AQUAMY-XXXX numbers, parse the integer suffix,
+  // find the true maximum, then increment — avoids alphabetic sort bug.
+  const users = await prisma.user.findMany({
+    where:  { memberNumber: { startsWith: "AQUAMY-" } },
+    select: { memberNumber: true },
   });
-  if (!latest?.memberNumber) return "AQUAMY-0001";
-  const match = latest.memberNumber.match(/(\d+)$/);
-  const next  = match ? parseInt(match[1], 10) + 1 : 1;
-  return `AQUAMY-${String(next).padStart(4, "0")}`;
+
+  let max = 0;
+  for (const u of users) {
+    const match = u.memberNumber.match(/(\d+)$/);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (n > max) max = n;
+    }
+  }
+
+  // Retry until we find a number not already taken (handles race conditions)
+  let next = max + 1;
+  while (true) {
+    const candidate = `AQUAMY-${String(next).padStart(4, "0")}`;
+    const exists = await prisma.user.findUnique({
+      where:  { memberNumber: candidate },
+      select: { id: true },
+    });
+    if (!exists) return candidate;
+    next++;
+  }
 }
 
 function getAge(dob: Date): number {
