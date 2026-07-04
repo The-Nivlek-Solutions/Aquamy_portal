@@ -1,5 +1,10 @@
-// components/Sidebar.tsx — v3
-// Adds: Announcements nav link + unread badge + Megaphone icon
+// components/Sidebar.tsx — v4
+// Changes from v3:
+//   - Admin-only roles (ADMIN, CHAIRPERSON, etc.) see ONLY admin nav — no
+//     "My Loans", "My Shares" etc. Those are for their personal member account.
+//   - MEMBER role sees ONLY member nav, no admin section.
+//   - Mixed roles (e.g. a member who is also TREASURER) see both sections.
+//   - Theme toggle, mobile hamburger, unread badge preserved from v3.
 "use client";
 
 import Link from "next/link";
@@ -7,62 +12,64 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { useState, useEffect } from "react";
-import Image from "next/image"; // <-- ADDED: Import Next.js Image
 import {
   LayoutDashboard, Wallet, Landmark, Coins,
   Users, FileText, ShieldCheck, BarChart2,
-  UserPlus, LogOut, ChevronRight, Settings,
+  UserPlus, LogOut, Settings,
   Sun, Moon, Menu, X, Megaphone,
 } from "lucide-react";
 
 interface SidebarProps {
-  role:           string;
-  name:           string;
-  memberNumber:   string;
-  unreadCount?:   number;   // passed from portal layout
-  profilePhotoUrl?: string | null; // <-- ADDED: Accept the profile photo URL
+  role:         string;
+  name:         string;
+  memberNumber: string;
+  unreadCount?: number;
 }
 
+// ── Nav definitions ────────────────────────────────────────────────────────
+
 const MEMBER_NAV = [
-  { label: "Dashboard",     href: "/dashboard",                  icon: LayoutDashboard },
-  { label: "Contributions", href: "/dashboard/contributions",    icon: Wallet          },
-  { label: "Loans",         href: "/dashboard/loans",            icon: Landmark        },
-  { label: "Shares",        href: "/dashboard/shares",           icon: Coins           },
-  { label: "Payments",      href: "/dashboard/payments",         icon: Wallet          },
-  { label: "Announcements", href: "/dashboard/announcements",    icon: Megaphone       },
+  { label: "Dashboard",      href: "/dashboard",                 icon: LayoutDashboard },
+  { label: "Contributions",  href: "/dashboard/contributions",   icon: Wallet          },
+  { label: "Loans",          href: "/dashboard/loans",           icon: Landmark        },
+  { label: "Shares",         href: "/dashboard/shares",          icon: Coins           },
+  { label: "Payments",       href: "/dashboard/payments",        icon: Wallet          },
+  { label: "Announcements",  href: "/dashboard/announcements",   icon: Megaphone       },
 ];
 
 const ADMIN_NAV = [
-  { label: "Overview",      href: "/admin",                  icon: LayoutDashboard, roles: null },
-  { label: "Approvals",     href: "/admin/approvals",        icon: UserPlus,        roles: null },
-  { label: "Data Entry",    href: "/admin/data-entry",       icon: FileText,        roles: ["ADMIN","TREASURER"] },
-  { label: "Members",       href: "/admin/members",          icon: Users,           roles: null },
-  { label: "Loans",         href: "/admin/loans",            icon: Landmark,        roles: ["ADMIN","TREASURER","CHAIRPERSON","CREDIT_COMMITTEE_MEMBER","LOAN_OFFICER"] },
-  { label: "Invite Codes",  href: "/admin/codes",            icon: ShieldCheck,     roles: ["ADMIN","SECRETARY"] },
-  { label: "Reports",       href: "/admin/reports",          icon: BarChart2,       roles: ["ADMIN","TREASURER","AUDITOR","CHAIRPERSON"] },
-  { label: "Announcements", href: "/admin/announcements",    icon: Megaphone,       roles: null },
+  { label: "Overview",       href: "/admin",                     icon: LayoutDashboard, roles: null },
+  { label: "Approvals",      href: "/admin/approvals",           icon: UserPlus,        roles: null },
+  { label: "Data Entry",     href: "/admin/data-entry",          icon: FileText,        roles: ["ADMIN","TREASURER"] },
+  { label: "Members",        href: "/admin/members",             icon: Users,           roles: null },
+  { label: "Loans",          href: "/admin/loans",               icon: Landmark,        roles: ["ADMIN","TREASURER","CHAIRPERSON","CREDIT_COMMITTEE_MEMBER","LOAN_OFFICER"] },
+  { label: "Invite Codes",   href: "/admin/codes",               icon: ShieldCheck,     roles: ["ADMIN","SECRETARY"] },
+  { label: "Reports",        href: "/admin/reports",             icon: BarChart2,       roles: ["ADMIN","TREASURER","AUDITOR","CHAIRPERSON"] },
+  { label: "Announcements",  href: "/admin/announcements",       icon: Megaphone,       roles: null },
 ];
 
-const ADMIN_ROLES = [
-  "ADMIN","CHAIRPERSON","VICE_CHAIRPERSON","TREASURER",
-  "SECRETARY","AUDITOR","CREDIT_COMMITTEE_MEMBER","LOAN_OFFICER",
+// Roles that are administrative only — they see ONLY admin nav in the sidebar.
+// They should use a SEPARATE registered member account for personal finances.
+const ADMIN_ONLY_ROLES = [
+  "ADMIN", "CHAIRPERSON", "VICE_CHAIRPERSON", "TREASURER",
+  "SECRETARY", "AUDITOR", "CREDIT_COMMITTEE_MEMBER", "LOAN_OFFICER",
 ];
 
-export default function Sidebar({ role, name, memberNumber, unreadCount = 0, profilePhotoUrl }: SidebarProps) { // <-- UPDATED: Destructure profilePhotoUrl
-  const pathname  = usePathname();
+export default function Sidebar({ role, name, memberNumber, unreadCount = 0 }: SidebarProps) {
+  const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted,    setMounted]    = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
-  const isAdmin = ADMIN_ROLES.includes(role);
-  const isDark  = resolvedTheme === "dark";
-  const initials = name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+  const isDark        = resolvedTheme === "dark";
+  const isAdminRole   = ADMIN_ONLY_ROLES.includes(role);
+  // Show member nav only for pure MEMBER role or if role is unrecognised
+  const showMemberNav = !isAdminRole;
+  const initials      = name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() || "?";
 
-  function NavLink({
-    href, label, icon: Icon, badge,
-  }: {
+  function NavLink({ href, label, icon: Icon, badge }: {
     href: string; label: string; icon: React.ElementType; badge?: number;
   }) {
     const active =
@@ -81,22 +88,19 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
           : "text-stone-400 dark:text-stone-500 group-hover:text-stone-600 dark:group-hover:text-stone-300"}
         />
         <span className="flex-1">{label}</span>
-        {/* Unread badge — only shown on Announcements when there are unread */}
         {badge != null && badge > 0 && (
           <span className={`text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0
-            ${active
-              ? "bg-white text-[#1C4A2E]"
-              : "bg-red-500 text-white"}`}>
+            ${active ? "bg-white text-[#1C4A2E]" : "bg-red-500 text-white"}`}>
             {badge > 99 ? "99+" : badge}
           </span>
         )}
-        {active && !badge && <ChevronRight size={12} className="text-white/60" />}
       </Link>
     );
   }
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
+
       {/* Brand */}
       <div className="px-5 py-5 border-b border-stone-200 dark:border-stone-700 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -108,7 +112,7 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
               AQUAMY
             </p>
             <p className="text-[10px] text-stone-400 dark:text-stone-500 leading-none mt-0.5">
-              Member Portal
+              {isAdminRole ? "Admin Portal" : "Member Portal"}
             </p>
           </div>
         </div>
@@ -118,11 +122,11 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
         </button>
       </div>
 
-     {/* Nav */}
+      {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        
-        {/* ONLY show member nav if the user is NOT an admin */}
-        {!isAdmin && (
+
+        {/* ── MEMBER NAV — only for MEMBER role ─────────────────────── */}
+        {showMemberNav && (
           <>
             <p className="text-[9px] font-black uppercase tracking-widest text-stone-300 dark:text-stone-600 px-3 pb-2 pt-1">
               My Account
@@ -137,15 +141,12 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
           </>
         )}
 
-        {/* ONLY show admin nav if the user IS an admin */}
-        {isAdmin && (
+        {/* ── ADMIN NAV — for all admin roles ───────────────────────── */}
+        {isAdminRole && (
           <>
-            {/* Changed pt-4 to pt-1 here so the admin header sits nicely at the top of the sidebar */}
-            <div className="pt-1 pb-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-stone-300 dark:text-stone-600 px-3">
-                {role.replace(/_/g, " ")}
-              </p>
-            </div>
+            <p className="text-[9px] font-black uppercase tracking-widest text-stone-300 dark:text-stone-600 px-3 pb-2 pt-1">
+              {role.replace(/_/g, " ")}
+            </p>
             {ADMIN_NAV
               .filter(item => !item.roles || item.roles.includes(role))
               .map(item => (
@@ -157,28 +158,14 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
 
       {/* Footer */}
       <div className="px-3 py-4 border-t border-stone-100 dark:border-stone-700 space-y-1">
-        {/* User card */}
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-stone-50 dark:bg-stone-800 mb-2">
-          
-          {/* <-- UPDATED: Render Image if URL exists, otherwise fallback to initials */}
-          {profilePhotoUrl ? (
-            <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-stone-200 dark:border-stone-700">
-              <Image 
-                src={profilePhotoUrl} 
-                alt={`${name}'s profile photo`} 
-                fill 
-                className="object-cover"
-                sizes="32px"
-              />
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-[#1C4A2E] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {initials}
-            </div>
-          )}
 
+        {/* User chip */}
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-stone-50 dark:bg-stone-800 mb-2">
+          <div className="w-8 h-8 rounded-full bg-[#1C4A2E] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            {initials}
+          </div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-stone-800 dark:text-stone-200 truncate">{name || "Member"}</p>
+            <p className="text-xs font-bold text-stone-800 dark:text-stone-200 truncate">{name || "User"}</p>
             <p className="text-[10px] font-mono text-stone-400 dark:text-stone-500">{memberNumber}</p>
           </div>
         </div>
@@ -188,21 +175,21 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
           <button
             onClick={() => setTheme(isDark ? "light" : "dark")}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 transition-all">
-            {isDark
-              ? <Sun  size={15} className="text-amber-400" />
-              : <Moon size={15} className="text-stone-400" />}
+            {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-stone-400" />}
             {isDark ? "Light Mode" : "Dark Mode"}
           </button>
         )}
 
-        <Link href="/dashboard/settings" onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 transition-all">
-          <Settings size={15} className="text-stone-400" />
-          Settings
-        </Link>
+        {/* Settings — only for member roles who have profile settings */}
+        {showMemberNav && (
+          <Link href="/dashboard/settings" onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 transition-all">
+            <Settings size={15} className="text-stone-400" />
+            Settings
+          </Link>
+        )}
 
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+        <button onClick={() => signOut({ callbackUrl: "/login" })}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-stone-500 dark:text-stone-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-all group">
           <LogOut size={15} className="text-stone-400 group-hover:text-red-500" />
           Sign Out
@@ -214,11 +201,9 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
   return (
     <>
       {/* Mobile hamburger */}
-      <button
-        onClick={() => setMobileOpen(true)}
+      <button onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-4 left-4 z-50 w-10 h-10 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg flex items-center justify-center shadow-sm">
         <Menu size={18} className="text-stone-600 dark:text-stone-400" />
-        {/* Badge on hamburger when sidebar is closed */}
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -228,10 +213,8 @@ export default function Sidebar({ role, name, memberNumber, unreadCount = 0, pro
 
       {/* Mobile backdrop */}
       {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="lg:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)} />
       )}
 
       {/* Mobile drawer */}
