@@ -1,7 +1,6 @@
-// app/actions/settings-actions.ts — v2
-// Fixed: removed occupation + subLocation (not in schema).
-// To add them later: add `occupation String?` and `subLocation String?`
-// to the User model in schema.prisma, then run prisma migrate dev.
+// app/actions/settings-actions.ts — v3
+// Uses actionError() for production-safe error messages.
+// All logic preserved from v2.
 "use server";
 
 import prisma from "@/lib/prisma";
@@ -9,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { revalidatePath } from "next/cache";
+import { actionError } from "@/lib/action-utils";
 
 // =============================================================================
 // UPDATE PROFILE
@@ -16,27 +16,26 @@ import { revalidatePath } from "next/cache";
 
 export async function updateProfile(formData: FormData) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Not authenticated.");
+  if (!session?.user?.email) throw actionError("Not authenticated.");
 
-  const firstName       = (formData.get("firstName")  as string)?.trim();
-  const lastName        = (formData.get("lastName")   as string)?.trim();
-  const phone           = (formData.get("phone")      as string)?.trim();
+  const firstName       = (formData.get("firstName")       as string)?.trim();
+  const lastName        = (formData.get("lastName")        as string)?.trim();
+  const phone           = (formData.get("phone")           as string)?.trim();
   const profilePhotoUrl = (formData.get("profilePhotoUrl") as string)?.trim() || null;
 
-  if (!firstName || !lastName) throw new Error("First and last name are required.");
-  if (!phone)                  throw new Error("Phone number is required.");
+  if (!firstName || !lastName) throw actionError("First and last name are required.");
+  if (!phone)                  throw actionError("Phone number is required.");
 
   const currentUser = await prisma.user.findUnique({
     where:  { email: session.user.email },
     select: { id: true },
   });
-  if (!currentUser) throw new Error("User not found.");
+  if (!currentUser) throw actionError("User not found.");
 
-  // Check phone isn't taken by another member
   const phoneConflict = await prisma.user.findFirst({
     where: { phone, id: { not: currentUser.id } },
   });
-  if (phoneConflict) throw new Error("This phone number is already registered to another member.");
+  if (phoneConflict) throw actionError("This phone number is already registered to another member.");
 
   await prisma.user.update({
     where: { id: currentUser.id },
@@ -59,49 +58,45 @@ export async function updateProfile(formData: FormData) {
 
 export async function changePassword(formData: FormData) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Not authenticated.");
+  if (!session?.user?.email) throw actionError("Not authenticated.");
 
   const currentPassword = formData.get("currentPassword") as string;
   const newPassword     = formData.get("newPassword")     as string;
   const confirmPassword = formData.get("confirmPassword") as string;
 
   if (!currentPassword || !newPassword || !confirmPassword)
-    throw new Error("All password fields are required.");
+    throw actionError("All password fields are required.");
   if (newPassword !== confirmPassword)
-    throw new Error("New passwords do not match.");
+    throw actionError("New passwords do not match.");
   if (newPassword.length < 8)
-    throw new Error("Password must be at least 8 characters.");
+    throw actionError("New password must be at least 8 characters.");
   if (newPassword === currentPassword)
-    throw new Error("New password must be different from current password.");
+    throw actionError("New password must be different from your current password.");
 
   const user = await prisma.user.findUnique({
     where:  { email: session.user.email },
     select: { id: true, password: true },
   });
-  if (!user) throw new Error("User not found.");
+  if (!user) throw actionError("User not found.");
 
   const valid = await bcrypt.compare(currentPassword, user.password);
-  if (!valid) throw new Error("Current password is incorrect.");
+  if (!valid) throw actionError("Current password is incorrect.");
 
   const hashed = await bcrypt.hash(newPassword, 12);
-  await prisma.user.update({
-    where: { id: user.id },
-    data:  { password: hashed },
-  });
+  await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
 }
 
 // =============================================================================
 // ADMIN: UPDATE MEMBER
-// Handles joining date override + role + status changes.
 // =============================================================================
 
 export async function adminUpdateMember(formData: FormData) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) throw new Error("Not authenticated.");
+  if (!session?.user?.email) throw actionError("Not authenticated.");
 
   const actorRole = (session.user as { role?: string }).role ?? "MEMBER";
   if (!["ADMIN","CHAIRPERSON","SECRETARY","TREASURER"].includes(actorRole))
-    throw new Error("Insufficient permissions.");
+    throw actionError("Insufficient permissions to update member records.");
 
   const userId      = formData.get("userId")    as string;
   const firstName   = (formData.get("firstName") as string)?.trim();
@@ -111,7 +106,7 @@ export async function adminUpdateMember(formData: FormData) {
   const status      = formData.get("status")      as string;
   const joinedAtRaw = formData.get("joinedAt")   as string;
 
-  if (!userId) throw new Error("Member ID is required.");
+  if (!userId) throw actionError("Member ID is required.");
 
   const updateData: Record<string, unknown> = {};
 
@@ -127,20 +122,17 @@ export async function adminUpdateMember(formData: FormData) {
     updateData.isActive = status === "ACTIVE";
   }
 
-  // Joining date override — core feature for pre-existing members
   if (joinedAtRaw) {
     const joinedAt = new Date(joinedAtRaw);
-    if (isNaN(joinedAt.getTime())) throw new Error("Invalid joining date.");
-    if (joinedAt > new Date())     throw new Error("Joining date cannot be in the future.");
+    if (isNaN(joinedAt.getTime())) throw actionError("Invalid joining date.");
+    if (joinedAt > new Date())     throw actionError("Joining date cannot be in the future.");
     updateData.createdAt = joinedAt;
   }
 
   await prisma.user.update({ where: { id: userId }, data: updateData });
 
-  // Audit log
   const actor = await prisma.user.findUnique({
-    where:  { email: session.user.email },
-    select: { id: true },
+    where: { email: session.user.email }, select: { id: true },
   });
   if (actor) {
     await prisma.auditLog.create({

@@ -11,35 +11,47 @@ import prisma from "@/lib/prisma";
 const resend  = new Resend(process.env.RESEND_API_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-// ── FROM address ──────────────────────────────────────────────────────────────
-// Testing (no verified domain): use onboarding@resend.dev
-//   → emails only reach the address you signed up to Resend with
-// Production (verified domain): use noreply@yourdomain.com
-//   → emails reach any address
-const FROM = process.env.EMAIL_FROM ?? "AQUAMY <onboarding@resend.dev>";
+// ============================================================
+// Replace ONLY the sendEmail helper function in lib/email.ts
+// Everything else (templates, other functions) stays the same.
+// ============================================================
 
-// Helper — logs the full error so you can debug in terminal / Vercel logs
+const FROM = process.env.EMAIL_FROM ?? "AQUAMY <onboarding@resend.dev>";
 async function sendEmail(to: string, subject: string, html: string, context: string) {
   if (!process.env.RESEND_API_KEY) {
-    console.warn(`[Email] RESEND_API_KEY not set — skipping email (${context})`);
+    console.warn(`[Email] RESEND_API_KEY not set — skipping (${context})`);
     return;
   }
 
-  try {
-    const result = await resend.emails.send({ from: FROM, to, subject, html });
+  // ── Development override ──────────────────────────────────────────────────
+  // Without a verified domain, Resend only allows sending to the address
+  // used to sign up (set TEST_EMAIL_OVERRIDE in .env.local).
+  // Remove this block once your domain is verified in Resend.
+  const override = process.env.TEST_EMAIL_OVERRIDE;
+  const recipient = override ?? to;
 
-    // Resend returns an error object (not a throw) when it fails
+  if (override && override !== to) {
+    console.log(`[Email] DEV override: redirecting ${to} → ${override} (${context})`);
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from:    FROM,
+      to:      recipient,
+      subject: override ? `[TEST → ${to}] ${subject}` : subject,
+      html,
+    });
+
     if ("error" in result && result.error) {
-      console.error(`[Email ERROR] ${context} → to: ${to}`, result.error);
-      // In development show the full object so you know exactly what failed
+      console.error(`[Email ERROR] ${context} → to: ${recipient}`, result.error);
       if (process.env.NODE_ENV === "development") {
         console.error("[Email ERROR detail]", JSON.stringify(result.error, null, 2));
       }
     } else {
-      console.log(`[Email OK] ${context} → to: ${to} (id: ${(result as { data?: { id?: string } }).data?.id})`);
+      console.log(`[Email OK] ${context} → to: ${recipient}`);
     }
   } catch (err) {
-    console.error(`[Email THROWN] ${context} → to: ${to}`, err);
+    console.error(`[Email THROWN] ${context} → to: ${recipient}`, err);
   }
 }
 

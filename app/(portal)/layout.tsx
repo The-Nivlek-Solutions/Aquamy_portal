@@ -47,13 +47,12 @@ export default async function PortalLayout({
 
   return (
     <div className="flex min-h-screen bg-[#F7F5F0] dark:bg-stone-950 font-sans">
-      <Sidebar
-        role={user.role         ?? "MEMBER"}
-        name={displayName}
-        memberNumber={user.memberNumber ?? ""}
-        unreadCount={unreadCount}
-        profilePhotoUrl={profilePhotoUrl} // <-- ADDED: Pass it down to Sidebar
-      />
+        <Sidebar
+          role={user.role ?? "MEMBER"}
+          name={displayName}
+          memberNumber={user.memberNumber ?? ""}
+          unreadCount={unreadCount}
+        />
       <div className="flex-1 overflow-auto min-w-0">
         {children}
       </div>

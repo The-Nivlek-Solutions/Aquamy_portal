@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       where: { id: tx.id },
       data: {
         status:             "SUCCESS",
-        mpesaReceiptNumber: receiptNumber,
+        receiptNumber:      receiptNumber,
         resultCode:         0,
         resultDescription:  ResultDesc,
         callbackPayload:    body,
